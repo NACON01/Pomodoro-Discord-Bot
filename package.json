@@ -1,0 +1,20 @@
+{
+  "name": "pomodoro-discord-bot",
+  "version": "1.0.0",
+  "description": "Discord Pomodoro Timer Bot",
+  "main": "bot.js",
+  "type": "module",
+  "scripts": {
+    "start": "node bot.js",
+    "dev": "node --watch bot.js"
+  },
+  "dependencies": {
+    "discord.js": "^14.14.1",
+    "@discordjs/voice": "^0.16.1",
+    "ffmpeg-static": "^5.2.0",
+    "libsodium-wrappers": "^0.7.11"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
