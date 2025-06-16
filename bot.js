@@ -45,6 +45,31 @@ class PomodoroSession {
     this.startTime = Date.now()
     this.remainingTime = this.workTime
     this.cycle = 1
+
+    // ポモドーロ開始時に音声チャンネルに接続
+    this.connectToVoiceChannel()
+  }
+
+  async connectToVoiceChannel() {
+    if (!this.voiceChannelId) return
+
+    try {
+      const voiceChannel = client.channels.cache.get(this.voiceChannelId)
+      if (!voiceChannel) return
+
+      this.connection = joinVoiceChannel({
+        channelId: this.voiceChannelId,
+        guildId: voiceChannel.guild.id,
+        adapterCreator: voiceChannel.guild.voiceAdapterCreator,
+      })
+
+      this.player = createAudioPlayer()
+      this.connection.subscribe(this.player)
+
+      console.log(`音声チャンネル ${voiceChannel.name} に接続しました`)
+    } catch (error) {
+      console.error("音声チャンネル接続エラー:", error)
+    }
   }
 
   start() {
@@ -124,20 +149,12 @@ class PomodoroSession {
   }
 
   async playNotificationSound() {
-    if (!this.voiceChannelId) return
+    if (!this.connection || !this.player) {
+      console.log("音声接続がありません")
+      return
+    }
 
     try {
-      const voiceChannel = client.channels.cache.get(this.voiceChannelId)
-      if (!voiceChannel) return
-
-      this.connection = joinVoiceChannel({
-        channelId: this.voiceChannelId,
-        guildId: voiceChannel.guild.id,
-        adapterCreator: voiceChannel.guild.voiceAdapterCreator,
-      })
-
-      this.player = createAudioPlayer()
-
       // カスタム通知音があるかチェック
       const customSoundPath = path.join(process.cwd(), "sounds", `${this.userId}.mp3`)
       const defaultSoundPath = path.join(process.cwd(), "sounds", "default.mp3")
@@ -145,32 +162,54 @@ class PomodoroSession {
       let soundPath = defaultSoundPath
       if (fs.existsSync(customSoundPath)) {
         soundPath = customSoundPath
+        console.log("カスタム通知音を使用:", soundPath)
+      } else if (fs.existsSync(defaultSoundPath)) {
+        console.log("デフォルト通知音を使用:", soundPath)
+      } else {
+        console.log("通知音ファイルが見つかりません")
+        return
       }
 
-      if (fs.existsSync(soundPath)) {
-        const resource = createAudioResource(soundPath)
-        this.player.play(resource)
-        this.connection.subscribe(this.player)
-      }
+      const resource = createAudioResource(soundPath, {
+        inlineVolume: true,
+      })
+      resource.volume.setVolume(0.5) // 音量を50%に設定
+
+      this.player.play(resource)
+      console.log("通知音を再生しました")
     } catch (error) {
       console.error("音声再生エラー:", error)
     }
   }
 
   startNotificationLoop() {
-    this.notificationTimer = setInterval(async () => {
-      await this.playNotificationSound()
+    // 既存のタイマーをクリア
+    if (this.notificationTimer) {
+      clearInterval(this.notificationTimer)
+    }
+
+    // 即座に最初の通知音を再生
+    this.playNotificationSound()
+
+    // 指定間隔で通知音を繰り返し再生
+    this.notificationTimer = setInterval(() => {
+      console.log("通知音を繰り返し再生中...")
+      this.playNotificationSound()
     }, this.notificationInterval)
+
+    console.log(`通知音ループを開始しました（間隔: ${this.notificationInterval / 1000}秒）`)
   }
 
   stopNotifications() {
     if (this.notificationTimer) {
       clearInterval(this.notificationTimer)
       this.notificationTimer = null
+      console.log("通知音ループを停止しました")
     }
-    if (this.connection) {
-      this.connection.destroy()
-      this.connection = null
+
+    // 音声接続は維持する（切断しない）
+    if (this.player) {
+      this.player.stop()
     }
   }
 
@@ -183,6 +222,7 @@ class PomodoroSession {
       this.cycle++
     }
 
+    console.log(`フェーズ切り替え: ${this.isWorking ? "作業" : "休憩"}時間開始`)
     this.start()
   }
 
@@ -191,7 +231,16 @@ class PomodoroSession {
       clearTimeout(this.timer)
     }
     this.stopNotifications()
+
+    // 音声接続を切断
+    if (this.connection) {
+      this.connection.destroy()
+      this.connection = null
+      console.log("音声チャンネルから切断しました")
+    }
+
     pomodoroSessions.delete(this.userId)
+    console.log("ポモドーロセッションを終了しました")
   }
 }
 
